@@ -508,6 +508,11 @@ img {
   background: rgba(255, 255, 255, 0.74);
 }
 
+.selected-provider {
+  border-color: rgba(12, 138, 133, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(12, 138, 133, 0.16);
+}
+
 .timeline-item strong,
 .trace-item strong,
 .eval-item strong,
@@ -568,6 +573,12 @@ img {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.slot-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .slot-button {
