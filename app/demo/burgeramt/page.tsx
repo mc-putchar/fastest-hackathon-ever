@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { brand } from "@/app/lib/brand";
 
 const demoSlots = [
   "Tue, 21 Apr 2026 at 08:10 - Burgeramt Mitte",
@@ -22,14 +23,26 @@ export default function DemoBurgeramtPage() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">Controlled Demo Target</p>
-        <h1>Stable Burgeramt flow for the hackathon.</h1>
+      <section className="hero harbor-hero">
+        <div className="hero-top">
+          <div className="brand-lockup">
+            <div className="brand-mark" aria-hidden="true">
+              H
+            </div>
+            <div>
+              <p className="eyebrow">{brand.demo.eyebrow}</p>
+              <p className="hero-tagline">{brand.tagline}</p>
+            </div>
+          </div>
+        </div>
+
+        <h1>{brand.demo.title}</h1>
         <p>
-          This internal page gives the Playwright executor a reliable browser path:
-          fill inputs, search slots, review the booking, and confirm it. It mirrors
-          the shape of a public service booking flow without depending on external site
-          reliability during the demo.
+          {brand.demo.description}
+        </p>
+        <p>
+          Harbor uses this page to fill inputs, search slots, review the booking, and
+          pause before confirmation without depending on live-site reliability.
         </p>
       </section>
 
@@ -166,7 +179,8 @@ export default function DemoBurgeramtPage() {
             <div className="approval-card" data-testid="waiting-state">
               <strong>Awaiting confirmation</strong>
               <p className="muted">
-                This is the pause point where the user approves the irreversible action.
+                This is the point where Harbor stops and asks the user to approve the
+                irreversible action.
               </p>
             </div>
           )}

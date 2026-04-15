@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useMemo, useState } from "react";
+import { brand, executionTargetLabel, type ViewMode } from "@/app/lib/brand";
 import type { ApprovalRequest, Task } from "@/app/lib/domain";
 
 type CreateResponse = {
@@ -46,63 +47,92 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatLabel(value: string) {
+  return value.replaceAll("_", " ");
+}
+
 function pendingApproval(task: Task | null): ApprovalRequest | undefined {
   return task?.approvals.find((approval) => approval.status === "pending");
 }
 
-function traceStatusLabel(task: Task | null) {
-  if (!task) {
-    return "Langfuse-ready";
+function basicStatusCopy(task: Task, approval: ApprovalRequest | undefined) {
+  if (approval) {
+    return "Harbor paused before the irreversible step and is waiting for your approval.";
   }
 
-  return task.runtime.traceExportState ?? "pending";
+  if (task.nextPrompt) {
+    return "Harbor needs one more detail before it can continue.";
+  }
+
+  if (task.status === "completed") {
+    return "The run is finished and the proof bundle is ready.";
+  }
+
+  if (task.status === "blocked" || task.status === "failed") {
+    return "The run hit a blocker and kept the latest evidence attached for review.";
+  }
+
+  return "Harbor is preparing the next step and will pause if approval is required.";
 }
 
-function plannerLabel(task: Task | null) {
-  if (!task) {
-    return "OpenAI gpt-5.4-mini";
+function proofBundleCopy(task: Task | null) {
+  if (!task || task.artifacts.length === 0) {
+    return "Screenshots and notes will appear here as Harbor works.";
   }
 
-  const provider = task.runtime.plannerProvider ?? "heuristic";
-  const model = task.runtime.plannerModel ?? "heuristic-parser";
-  return `${provider}:${model}`;
-}
-
-function executorLabel(task: Task | null) {
-  if (!task) {
-    return "Playwright executor";
-  }
-
-  return task.runtime.executorKey ?? `${task.executionTarget}-executor`;
+  return `${task.artifacts.length} saved item${task.artifacts.length === 1 ? "" : "s"} attached to this run.`;
 }
 
 export function TaskDashboard() {
   const [draft, setDraft] = useState(starterPrompts[0].prompt);
   const [followUp, setFollowUp] = useState("");
   const [executionTarget, setExecutionTarget] = useState<"demo" | "live">("demo");
+  const [viewMode, setViewMode] = useState<ViewMode>("basic");
   const [task, setTask] = useState<Task | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const approval = pendingApproval(task);
+  const visibleMessages = task ? (viewMode === "basic" ? task.messages.slice(-4) : task.messages) : [];
+  const recentTimeline = task ? task.timeline.slice(0, viewMode === "basic" ? 3 : task.timeline.length) : [];
+  const recentArtifacts = task ? task.artifacts.slice(0, viewMode === "basic" ? 2 : task.artifacts.length) : [];
+
   const stats = useMemo(() => {
+    if (viewMode === "basic") {
+      if (!task) {
+        return brand.trustPillars;
+      }
+
+      return [
+        {
+          label: "Current workflow",
+          value: task.targetService,
+        },
+        {
+          label: "Approval step",
+          value: approval ? "Waiting on your review" : "Only when needed",
+        },
+        {
+          label: "Proof bundle",
+          value: proofBundleCopy(task),
+        },
+      ];
+    }
+
     if (!task) {
       return [
         { label: "Task type", value: "Appointment booking" },
-        { label: "Planner", value: plannerLabel(null) },
-        { label: "Executor", value: executorLabel(null) },
-        { label: "Trace sink", value: "Langfuse-ready" },
+        { label: "Execution path", value: "Demo or live probe" },
+        { label: "Risk level", value: "Approval-gated" },
       ];
     }
 
     return [
-      { label: "Task type", value: task.type.replaceAll("_", " ") },
-      { label: "Planner", value: plannerLabel(task) },
-      { label: "Executor", value: executorLabel(task) },
-      { label: "Langfuse", value: traceStatusLabel(task) },
+      { label: "Task type", value: formatLabel(task.type) },
+      { label: "Execution path", value: executionTargetLabel(task.executionTarget, "advanced") },
+      { label: "Risk level", value: task.riskLevel },
     ];
-  }, [task]);
-
-  const approval = pendingApproval(task);
+  }, [approval, task, viewMode]);
 
   async function createTask(prompt: string) {
     setIsWorking(true);
@@ -175,23 +205,64 @@ export function TaskDashboard() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <p className="eyebrow">Dream Agent Prototype</p>
-        <h1>Delegating bureaucracy to a calm, careful operator.</h1>
-        <p>
-          This prototype turns messy digital errands into a guided agent run. The
-          planner model handles intent extraction and structured intake, while the
-          browser executor stays deterministic and approval-gated. The first
-          workflow is Berlin Burgeramt appointment booking, but the product
-          language stays task-centric: goal intake, structured clarification,
-          browser execution, approval gates, evidence, and trace-backed confidence.
-        </p>
+      <section className="hero harbor-hero">
+        <div className="hero-top">
+          <div className="brand-lockup">
+            <div className="brand-mark" aria-hidden="true">
+              H
+            </div>
+            <div>
+              <p className="eyebrow">{brand.name}</p>
+              <p className="hero-tagline">{brand.tagline}</p>
+            </div>
+          </div>
+
+          <div className="mode-switch" aria-label="View mode">
+            {[brand.basicLabel, brand.advancedLabel].map((label) => {
+              const mode = label.toLowerCase() as ViewMode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`mode-button ${viewMode === mode ? "active" : ""}`}
+                  onClick={() => setViewMode(mode)}
+                  aria-pressed={viewMode === mode}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="hero-copy">
+          <h1>{brand.headline}</h1>
+          <p>{brand.supportingCopy}</p>
+          <p>{brand.exampleCopy}</p>
+        </div>
 
         <div className="hero-grid">
           <div className="panel strong panel-pad stack">
+            <div className="stack-tight">
+              <div className="split-row">
+                <div>
+                  <p className="eyebrow">Start a run</p>
+                  <strong className="section-title">What needs handling?</strong>
+                </div>
+                {task ? (
+                  <span className={`status-pill status-${task.status}`}>{formatLabel(task.status)}</span>
+                ) : null}
+              </div>
+
+              <p className="muted">
+                Tell Harbor the outcome you want. It will gather the missing details,
+                pause before the irreversible step, and keep the proof attached.
+              </p>
+            </div>
+
             <div>
               <label className="label" htmlFor="goal">
-                Describe the task
+                Task request
               </label>
               <textarea
                 id="goal"
@@ -212,17 +283,22 @@ export function TaskDashboard() {
                 value={executionTarget}
                 onChange={(event) => setExecutionTarget(event.target.value as "demo" | "live")}
               >
-                <option value="demo">Controlled demo flow</option>
-                <option value="live">Live Berlin service probe</option>
+                <option value="demo">{executionTargetLabel("demo", viewMode)}</option>
+                <option value="live">{executionTargetLabel("live", viewMode)}</option>
               </select>
             </div>
 
             <div className="button-row">
-              <button className="button primary" type="button" onClick={() => createTask(draft)} disabled={isWorking}>
-                Start task run
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => createTask(draft)}
+                disabled={isWorking}
+              >
+                Start run
               </button>
               <a className="button secondary" href="/demo/burgeramt">
-                Open demo target
+                Open demo workflow
               </a>
             </div>
 
@@ -252,8 +328,8 @@ export function TaskDashboard() {
       </section>
 
       {error ? (
-        <section className="panel panel-pad" style={{ marginBottom: 20 }}>
-          <strong>Error</strong>
+        <section className="panel panel-pad alert-card">
+          <strong>Run error</strong>
           <p className="muted">{error}</p>
         </section>
       ) : null}
@@ -263,20 +339,30 @@ export function TaskDashboard() {
           <section className="panel strong panel-pad stack">
             <div className="split-row">
               <div>
-                <p className="eyebrow" style={{ marginBottom: 4 }}>
-                  Chat Thread
-                </p>
-                <strong>{task?.goal ?? "Start a task to open the working thread"}</strong>
+                <p className="eyebrow">{viewMode === "basic" ? "Conversation" : "Task thread"}</p>
+                <strong className="section-title">
+                  {task?.goal ?? "Start a run to open the working conversation"}
+                </strong>
               </div>
               {task ? (
-                <span className={`status-pill status-${task.status}`}>{task.status.replaceAll("_", " ")}</span>
+                <span className={`status-pill status-${task.status}`}>{formatLabel(task.status)}</span>
               ) : null}
             </div>
 
             {task ? (
               <>
+                {viewMode === "basic" ? (
+                  <div className="approval-card summary-card">
+                    <strong>Current status</strong>
+                    <p>{basicStatusCopy(task, approval)}</p>
+                    <p className="muted">
+                      {task.nextPrompt ?? "Harbor will ask the next useful question only if it needs more detail."}
+                    </p>
+                  </div>
+                ) : null}
+
                 <div className="thread">
-                  {task.messages.map((message) => (
+                  {visibleMessages.map((message) => (
                     <div key={message.id} className={`bubble ${message.role}`}>
                       <div className="bubble-head">
                         {message.role} · {formatDate(message.createdAt)}
@@ -286,17 +372,10 @@ export function TaskDashboard() {
                   ))}
                 </div>
 
-                {task.nextPrompt ? (
-                  <div className="approval-card">
-                    <strong>Why I&apos;m asking</strong>
-                    <p className="muted">{task.nextPrompt}</p>
-                  </div>
-                ) : null}
-
                 <div className="stack">
                   <div>
                     <label className="label" htmlFor="follow-up">
-                      Reply to the agent
+                      {viewMode === "basic" ? "Reply to Harbor" : "Reply to the agent"}
                     </label>
                     <textarea
                       id="follow-up"
@@ -340,15 +419,15 @@ export function TaskDashboard() {
               </>
             ) : (
               <div className="empty-state">
-                The task thread, approvals, and evidence will appear here after the first
-                run starts.
+                Harbor will keep the conversation, approval step, and proof bundle in one place
+                after the first run starts.
               </div>
             )}
           </section>
 
-          {task ? (
+          {viewMode === "advanced" && task ? (
             <section className="panel panel-pad stack">
-              <p className="eyebrow">Progress Timeline</p>
+              <p className="eyebrow">Progress timeline</p>
               <div className="timeline">
                 {task.timeline.map((event) => (
                   <div key={event.id} className="timeline-item">
@@ -376,101 +455,133 @@ export function TaskDashboard() {
             </section>
           ) : null}
 
-          {task ? (
-            <section className="panel panel-pad stack">
-              <p className="eyebrow">Runtime Split</p>
-              <div className="approval-card">
-                <strong>Planner model</strong>
-                <p className="muted">
-                  {plannerLabel(task)} · {task.runtime.plannerMode ?? "fallback"}
-                </p>
-                <p>{task.runtime.plannerSummary ?? "Waiting for planner output."}</p>
-                {task.runtime.plannerLastError ? (
-                  <p className="muted">Latest planner issue: {task.runtime.plannerLastError}</p>
-                ) : null}
-              </div>
-              <div className="approval-card">
-                <strong>Browser executor</strong>
-                <p className="muted">{executorLabel(task)}</p>
-                <p>
-                  The planner only extracts and updates structured state. The
-                  Playwright executor owns slot search, evidence capture, and
-                  approval-gated submission.
-                </p>
-              </div>
-            </section>
+          {viewMode === "basic" ? (
+            <>
+              <section className="panel panel-pad stack">
+                <p className="eyebrow">Run summary</p>
+                <div className="summary-list">
+                  <div className="summary-item">
+                    <span className="label">Execution path</span>
+                    <strong>{executionTargetLabel(task?.executionTarget ?? executionTarget, "basic")}</strong>
+                  </div>
+                  <div className="summary-item">
+                    <span className="label">Current workflow</span>
+                    <strong>{task?.targetService ?? "Berlin Burgeramt booking"}</strong>
+                  </div>
+                  <div className="summary-item">
+                    <span className="label">Latest update</span>
+                    <strong>
+                      {task && recentTimeline[0]
+                        ? `${recentTimeline[0].label} · ${formatDate(recentTimeline[0].createdAt)}`
+                        : "Waiting for the first run"}
+                    </strong>
+                  </div>
+                  <div className="summary-item">
+                    <span className="label">Proof bundle</span>
+                    <strong>{proofBundleCopy(task)}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <section className="panel panel-pad stack">
+                <p className="eyebrow">Proof at a glance</p>
+                {task && recentArtifacts.length > 0 ? (
+                  <div className="artifact-grid compact">
+                    {recentArtifacts.map((artifact) => (
+                      <article key={artifact.id} className="artifact-card compact">
+                        {artifact.kind === "screenshot" && artifact.href ? (
+                          <img src={artifact.href} alt={artifact.title} />
+                        ) : null}
+                        <strong>{artifact.title}</strong>
+                        <p>{artifact.summary}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="approval-card">
+                    <strong>No proof yet</strong>
+                    <p className="muted">
+                      Harbor will attach screenshots, extracted slots, and confirmation details
+                      as the run advances.
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              <section className="panel panel-pad stack">
+                <p className="eyebrow">Recent progress</p>
+                {task && recentTimeline.length > 0 ? (
+                  <div className="timeline">
+                    {recentTimeline.map((event) => (
+                      <div key={event.id} className="timeline-item">
+                        <strong>{event.label}</strong>
+                        <p>{event.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="approval-card">
+                    <strong>Quiet until the first step</strong>
+                    <p className="muted">
+                      Harbor keeps the timeline compact in Basic mode and expands it in Advanced
+                      mode.
+                    </p>
+                  </div>
+                )}
+              </section>
+            </>
           ) : null}
 
-          {task ? (
-            <section className="panel panel-pad stack">
-              <p className="eyebrow">Evidence</p>
-              <div className="artifact-grid">
-                {task.artifacts.map((artifact) => (
-                  <article key={artifact.id} className="artifact-card">
-                    {artifact.kind === "screenshot" && artifact.href ? (
-                      <img src={artifact.href} alt={artifact.title} />
-                    ) : null}
-                    <strong>{artifact.title}</strong>
-                    <p>{artifact.summary}</p>
-                    {artifact.content ? <pre className="code">{artifact.content}</pre> : null}
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {task ? (
-            <section className="detail-grid">
-              <div className="panel panel-pad stack">
-                <div className="split-row">
-                  <p className="eyebrow">Langfuse Trace Story</p>
-                  {task.runtime.traceUrl ? (
-                    <a className="button secondary" href={task.runtime.traceUrl} target="_blank" rel="noreferrer">
-                      Open trace
-                    </a>
-                  ) : null}
-                </div>
-                <div className="approval-card">
-                  <strong>Trace status</strong>
-                  <p>
-                    <span className="code">{task.runtime.traceId}</span>
-                  </p>
-                  <p className="muted">
-                    Export state: {task.runtime.traceExportState ?? "pending"}
-                    {task.runtime.traceLastSyncedAt ? ` · synced ${formatDate(task.runtime.traceLastSyncedAt)}` : ""}
-                  </p>
-                  {task.runtime.traceLastError ? (
-                    <p className="muted">Latest export issue: {task.runtime.traceLastError}</p>
-                  ) : null}
-                </div>
-                <div className="trace-list">
-                  {task.traces.map((trace) => (
-                    <div key={trace.id} className="trace-item">
-                      <strong>{trace.name}</strong>
-                      <p>{trace.detail}</p>
-                      <span className="muted">
-                        {trace.stage} · {trace.kind} · {formatDate(trace.createdAt)}
-                      </span>
-                    </div>
+          {viewMode === "advanced" && task ? (
+            <>
+              <section className="panel panel-pad stack">
+                <p className="eyebrow">Evidence</p>
+                <div className="artifact-grid">
+                  {recentArtifacts.map((artifact) => (
+                    <article key={artifact.id} className="artifact-card">
+                      {artifact.kind === "screenshot" && artifact.href ? (
+                        <img src={artifact.href} alt={artifact.title} />
+                      ) : null}
+                      <strong>{artifact.title}</strong>
+                      <p>{artifact.summary}</p>
+                      {artifact.content ? <pre className="code-block">{artifact.content}</pre> : null}
+                    </article>
                   ))}
                 </div>
-              </div>
+              </section>
 
-              <div className="panel panel-pad stack">
-                <p className="eyebrow">Eval Hooks</p>
-                <div className="eval-list">
-                  {task.evaluations.map((evaluation) => (
-                    <div key={evaluation.id} className="eval-item">
-                      <strong>{evaluation.name}</strong>
-                      <p>{evaluation.summary}</p>
-                      <span className="muted">
-                        score {evaluation.score.toFixed(2)} · {evaluation.label}
-                      </span>
-                    </div>
-                  ))}
+              <section className="detail-grid">
+                <div className="panel panel-pad stack">
+                  <p className="eyebrow">Langfuse trace story</p>
+                  <div className="trace-list">
+                    {task.traces.map((trace) => (
+                      <div key={trace.id} className="trace-item">
+                        <strong>{trace.name}</strong>
+                        <p>{trace.detail}</p>
+                        <span className="muted">
+                          {trace.stage} · {trace.kind} · {formatDate(trace.createdAt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </section>
+
+                <div className="panel panel-pad stack">
+                  <p className="eyebrow">Eval hooks</p>
+                  <div className="eval-list">
+                    {task.evaluations.map((evaluation) => (
+                      <div key={evaluation.id} className="eval-item">
+                        <strong>{evaluation.name}</strong>
+                        <p>{evaluation.summary}</p>
+                        <span className="muted">
+                          score {evaluation.score.toFixed(2)} · {evaluation.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </>
           ) : null}
         </div>
       </section>

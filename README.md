@@ -1,6 +1,6 @@
-# Dream Agent Hackathon Prototype
+# Harbor Hackathon Prototype
 
-Berlin-first, chat-driven workflow agent for bureaucratic digital errands.
+Calm operator for high-friction digital errands, starting with Berlin Burgeramt booking.
 
 ## Run
 

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { brand } from "@/app/lib/brand";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dream Agent",
-  description: "A semi-autonomous digital bureaucracy operator for Berlin-first tasks.",
+  title: brand.name,
+  description: brand.shortDescription,
 };
 
 export default function RootLayout({
