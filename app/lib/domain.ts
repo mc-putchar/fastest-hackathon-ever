@@ -94,6 +94,17 @@ export interface TaskRuntime {
   selectedSlot?: string;
   liveUrl?: string;
   confirmationCode?: string;
+  plannerProvider?: "openai" | "heuristic";
+  plannerModel?: string;
+  plannerMode?: "model" | "fallback";
+  plannerSummary?: string;
+  plannerLastError?: string;
+  traceUrl?: string;
+  traceExportState?: "pending" | "synced" | "disabled" | "error";
+  traceLastSyncedAt?: string;
+  traceLastError?: string;
+  syncedEvaluationVersions?: Record<string, string>;
+  executorKey?: string;
 }
 
 export interface Task {

@@ -50,6 +50,32 @@ function pendingApproval(task: Task | null): ApprovalRequest | undefined {
   return task?.approvals.find((approval) => approval.status === "pending");
 }
 
+function traceStatusLabel(task: Task | null) {
+  if (!task) {
+    return "Langfuse-ready";
+  }
+
+  return task.runtime.traceExportState ?? "pending";
+}
+
+function plannerLabel(task: Task | null) {
+  if (!task) {
+    return "OpenAI gpt-5.4-mini";
+  }
+
+  const provider = task.runtime.plannerProvider ?? "heuristic";
+  const model = task.runtime.plannerModel ?? "heuristic-parser";
+  return `${provider}:${model}`;
+}
+
+function executorLabel(task: Task | null) {
+  if (!task) {
+    return "Playwright executor";
+  }
+
+  return task.runtime.executorKey ?? `${task.executionTarget}-executor`;
+}
+
 export function TaskDashboard() {
   const [draft, setDraft] = useState(starterPrompts[0].prompt);
   const [followUp, setFollowUp] = useState("");
@@ -62,15 +88,17 @@ export function TaskDashboard() {
     if (!task) {
       return [
         { label: "Task type", value: "Appointment booking" },
-        { label: "Autonomy", value: "Semi-autonomous" },
+        { label: "Planner", value: plannerLabel(null) },
+        { label: "Executor", value: executorLabel(null) },
         { label: "Trace sink", value: "Langfuse-ready" },
       ];
     }
 
     return [
       { label: "Task type", value: task.type.replaceAll("_", " ") },
-      { label: "Target", value: task.executionTarget },
-      { label: "Service", value: task.targetService },
+      { label: "Planner", value: plannerLabel(task) },
+      { label: "Executor", value: executorLabel(task) },
+      { label: "Langfuse", value: traceStatusLabel(task) },
     ];
   }, [task]);
 
@@ -152,7 +180,9 @@ export function TaskDashboard() {
         <h1>Delegating bureaucracy to a calm, careful operator.</h1>
         <p>
           This prototype turns messy digital errands into a guided agent run. The
-          first workflow is Berlin Burgeramt appointment booking, but the product
+          planner model handles intent extraction and structured intake, while the
+          browser executor stays deterministic and approval-gated. The first
+          workflow is Berlin Burgeramt appointment booking, but the product
           language stays task-centric: goal intake, structured clarification,
           browser execution, approval gates, evidence, and trace-backed confidence.
         </p>
@@ -348,6 +378,31 @@ export function TaskDashboard() {
 
           {task ? (
             <section className="panel panel-pad stack">
+              <p className="eyebrow">Runtime Split</p>
+              <div className="approval-card">
+                <strong>Planner model</strong>
+                <p className="muted">
+                  {plannerLabel(task)} · {task.runtime.plannerMode ?? "fallback"}
+                </p>
+                <p>{task.runtime.plannerSummary ?? "Waiting for planner output."}</p>
+                {task.runtime.plannerLastError ? (
+                  <p className="muted">Latest planner issue: {task.runtime.plannerLastError}</p>
+                ) : null}
+              </div>
+              <div className="approval-card">
+                <strong>Browser executor</strong>
+                <p className="muted">{executorLabel(task)}</p>
+                <p>
+                  The planner only extracts and updates structured state. The
+                  Playwright executor owns slot search, evidence capture, and
+                  approval-gated submission.
+                </p>
+              </div>
+            </section>
+          ) : null}
+
+          {task ? (
+            <section className="panel panel-pad stack">
               <p className="eyebrow">Evidence</p>
               <div className="artifact-grid">
                 {task.artifacts.map((artifact) => (
@@ -367,7 +422,27 @@ export function TaskDashboard() {
           {task ? (
             <section className="detail-grid">
               <div className="panel panel-pad stack">
-                <p className="eyebrow">Langfuse Trace Story</p>
+                <div className="split-row">
+                  <p className="eyebrow">Langfuse Trace Story</p>
+                  {task.runtime.traceUrl ? (
+                    <a className="button secondary" href={task.runtime.traceUrl} target="_blank" rel="noreferrer">
+                      Open trace
+                    </a>
+                  ) : null}
+                </div>
+                <div className="approval-card">
+                  <strong>Trace status</strong>
+                  <p>
+                    <span className="code">{task.runtime.traceId}</span>
+                  </p>
+                  <p className="muted">
+                    Export state: {task.runtime.traceExportState ?? "pending"}
+                    {task.runtime.traceLastSyncedAt ? ` · synced ${formatDate(task.runtime.traceLastSyncedAt)}` : ""}
+                  </p>
+                  {task.runtime.traceLastError ? (
+                    <p className="muted">Latest export issue: {task.runtime.traceLastError}</p>
+                  ) : null}
+                </div>
                 <div className="trace-list">
                   {task.traces.map((trace) => (
                     <div key={trace.id} className="trace-item">
