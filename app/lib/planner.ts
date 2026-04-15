@@ -1,3 +1,4 @@
+import { appointmentSpecialties } from "@/app/lib/appointment-demo-data";
 import type { ExecutionTarget, RiskLevel, Task, TaskInput, TaskMessage, TaskType } from "@/app/lib/domain";
 
 type PlannerReasoningEffort = "minimal" | "low" | "medium" | "high";
@@ -22,10 +23,12 @@ interface OpenAIPlannerPayload {
   summary: string;
   confidence: number;
   input: {
-    serviceType: string | null;
+    appointmentKind: TaskInput["appointmentKind"] | null;
+    specialty: string | null;
+    insuranceType: TaskInput["insuranceType"] | null;
     city: string | null;
-    applicantName: string | null;
-    applicantEmail: string | null;
+    patientName: string | null;
+    patientEmail: string | null;
     preferredDates: string[];
     notes: string | null;
     language: "en" | "de" | null;
@@ -46,7 +49,7 @@ declare global {
 }
 
 const FALLBACK_MODEL = "heuristic-parser";
-const DEFAULT_TARGET_SERVICE = "Berlin Burgeramt";
+const DEFAULT_TARGET_SERVICE = "Medical appointment search";
 const DEFAULT_TASK_TYPE: TaskType = "appointment_booking";
 
 const plannerSchema = {
@@ -77,20 +80,30 @@ const plannerSchema = {
       type: "object",
       additionalProperties: false,
       required: [
-        "serviceType",
+        "appointmentKind",
+        "specialty",
+        "insuranceType",
         "city",
-        "applicantName",
-        "applicantEmail",
+        "patientName",
+        "patientEmail",
         "preferredDates",
         "notes",
         "language",
         "executionTarget",
       ],
       properties: {
-        serviceType: { type: ["string", "null"] },
+        appointmentKind: {
+          type: ["string", "null"],
+          enum: ["doctor", "dentist", null],
+        },
+        specialty: { type: ["string", "null"] },
+        insuranceType: {
+          type: ["string", "null"],
+          enum: ["public", "private", "self_pay", null],
+        },
         city: { type: ["string", "null"] },
-        applicantName: { type: ["string", "null"] },
-        applicantEmail: { type: ["string", "null"] },
+        patientName: { type: ["string", "null"] },
+        patientEmail: { type: ["string", "null"] },
         preferredDates: {
           type: "array",
           items: { type: "string" },
@@ -110,24 +123,25 @@ const plannerSchema = {
 } as const;
 
 const plannerInstructions = [
-  "You are the planner for a semi-autonomous digital bureaucracy agent.",
+  "You are the planner for a semi-autonomous medical appointment booking agent.",
   "Your job is only to classify the task and extract structured fields from the user conversation.",
   "Do not invent facts, do not promise actions, and do not generate browser steps.",
   "Prefer null for unknown scalar fields and [] for unknown preferredDates.",
   "Only set executionTarget when the user explicitly asks for a live or demo run.",
   "Preserve simulation flags such as simulate:no-slots or simulate:site-change inside notes when they appear.",
-  "Map Burgeramt and appointment-related requests to appointment_booking and Berlin Burgeramt.",
+  "Map doctor, specialist, and dentist booking requests to appointment_booking and Medical appointment search.",
+  "Set appointmentKind to doctor or dentist only when the user clearly implies it.",
+  "Use specialty for doctor/specialist requests when the user names one, otherwise leave it null.",
+  "Map insurance mentions to public, private, or self_pay.",
   "If the request implies an irreversible real-world action, keep riskLevel at high.",
-  "Applicant name must be the legal name if supplied. Applicant email must be a plain email address if supplied.",
+  "Patient name must be the legal name if supplied. Patient email must be a plain email address if supplied.",
 ].join(" ");
 
-const serviceKeywords: Record<string, string> = {
-  anmeldung: "Anmeldung einer Wohnung",
-  wohnung: "Anmeldung einer Wohnung",
-  personalausweis: "Personalausweis beantragen",
-  reisepass: "Reisepass beantragen",
-  passport: "Reisepass beantragen",
-};
+const specialtyPatterns = [
+  { value: "Dermatology", patterns: [/dermatolog/i, /\bskin doctor\b/i] },
+  { value: "Cardiology", patterns: [/cardiolog/i, /\bheart doctor\b/i] },
+  { value: "General practice", patterns: [/general practice/i, /\bgp\b/i, /\bfamily doctor\b/i, /\bprimary care\b/i] },
+] as const;
 
 function normalizeReasoningEffort(value: string): PlannerReasoningEffort {
   if (value === "minimal" || value === "medium" || value === "high") {
@@ -155,10 +169,12 @@ function transcriptFromMessages(messages: Pick<TaskMessage, "role" | "content">[
 
 function compactInputSnapshot(input: TaskInput) {
   return {
-    serviceType: input.serviceType ?? null,
+    appointmentKind: input.appointmentKind ?? null,
+    specialty: input.specialty ?? null,
+    insuranceType: input.insuranceType ?? null,
     city: input.city ?? null,
-    applicantName: input.applicantName ?? null,
-    applicantEmail: input.applicantEmail ?? null,
+    patientName: input.patientName ?? null,
+    patientEmail: input.patientEmail ?? null,
     preferredDates: input.preferredDates ?? [],
     notes: input.notes ?? null,
     language: input.language ?? null,
@@ -166,34 +182,88 @@ function compactInputSnapshot(input: TaskInput) {
   };
 }
 
+function inferLanguage(message: string) {
+  return /\b(ich|bitte|termin|arzt|zahnarzt|fruhestmoglich|gesetzlich)\b/i.test(message) ? "de" : "en";
+}
+
+function findSpecialty(message: string) {
+  for (const specialty of specialtyPatterns) {
+    if (specialty.patterns.some((pattern) => pattern.test(message))) {
+      return specialty.value;
+    }
+  }
+
+  return null;
+}
+
+function inferAppointmentKind(message: string, specialty: string | null) {
+  if (/\bdentist\b|\bdental\b|\bzahnarzt\b/i.test(message)) {
+    return "dentist" as const;
+  }
+
+  if (specialty || /\bdoctor\b|\bspecialist\b|\barzt\b/i.test(message)) {
+    return "doctor" as const;
+  }
+
+  return null;
+}
+
+function inferInsuranceType(message: string) {
+  if (/\bself[ -]?pay\b|\bout of pocket\b/i.test(message)) {
+    return "self_pay" as const;
+  }
+
+  if (/\bprivate\b|\bprivat versichert\b/i.test(message)) {
+    return "private" as const;
+  }
+
+  if (/\bpublic\b|\bstatutory\b|\bgesetzlich\b/i.test(message)) {
+    return "public" as const;
+  }
+
+  return null;
+}
+
+function inferPreferredDates(message: string) {
+  const preferredDates: string[] = [];
+
+  if (/\bearliest\b|\basap\b|\bsoonest\b|\bfirst available\b|\bfruhestmoglich\b/i.test(message)) {
+    preferredDates.push("Earliest available");
+  }
+
+  return preferredDates;
+}
+
 function heuristicExtract(message: string): OpenAIPlannerPayload {
   const normalized = message.toLowerCase();
   const emailMatch = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  const nameMatch = message.match(/(?:my name is|i am|i'm)\s+([a-z][a-z\s'-]+)/i);
+  const nameMatch = message.match(/(?:my name is|patient name is|i am|i'm)\s+([a-z][a-z\s'-]+)/i);
   const simulationFlags = message.match(/simulate:[a-z-]+/gi) ?? [];
-
-  let serviceType: string | null = null;
-  for (const [keyword, value] of Object.entries(serviceKeywords)) {
-    if (normalized.includes(keyword)) {
-      serviceType = value;
-      break;
-    }
-  }
+  const specialty = findSpecialty(message);
+  const appointmentKind = inferAppointmentKind(message, specialty);
+  const notes = simulationFlags.length > 0 ? simulationFlags.join(", ") : null;
 
   return {
     taskType: DEFAULT_TASK_TYPE,
     targetService: DEFAULT_TARGET_SERVICE,
     riskLevel: "high",
     summary: "Fell back to the local heuristic planner because the model planner was unavailable.",
-    confidence: 0.72,
+    confidence: 0.75,
     input: {
-      serviceType,
+      appointmentKind,
+      specialty:
+        appointmentKind === "doctor" && specialty
+          ? specialty
+          : appointmentKind === "doctor" && normalized.includes("specialist")
+            ? null
+            : null,
+      insuranceType: inferInsuranceType(message),
       city: normalized.includes("berlin") ? "Berlin" : null,
-      applicantName: nameMatch ? nameMatch[1].trim().replace(/\.$/, "") : null,
-      applicantEmail: emailMatch?.[0] ?? null,
-      preferredDates: normalized.includes("earliest") ? ["Earliest available"] : [],
-      notes: simulationFlags.length > 0 ? simulationFlags.join(", ") : null,
-      language: /\b(ich|bitte|termin|anmeldung)\b/i.test(message) ? "de" : "en",
+      patientName: nameMatch ? nameMatch[1].trim().replace(/\.$/, "") : null,
+      patientEmail: emailMatch?.[0] ?? null,
+      preferredDates: inferPreferredDates(message),
+      notes,
+      language: inferLanguage(message),
       executionTarget: /\blive\b/i.test(message) ? "live" : /\bdemo\b/i.test(message) ? "demo" : null,
     },
   };
@@ -221,6 +291,13 @@ function validatePlannerPayload(value: unknown): OpenAIPlannerPayload | null {
   const parsedInput = input as OpenAIPlannerPayload["input"];
   if (
     !Array.isArray(parsedInput.preferredDates) ||
+    (parsedInput.appointmentKind !== null &&
+      parsedInput.appointmentKind !== "doctor" &&
+      parsedInput.appointmentKind !== "dentist") ||
+    (parsedInput.insuranceType !== null &&
+      parsedInput.insuranceType !== "public" &&
+      parsedInput.insuranceType !== "private" &&
+      parsedInput.insuranceType !== "self_pay") ||
     (parsedInput.language !== null && parsedInput.language !== "en" && parsedInput.language !== "de") ||
     (parsedInput.executionTarget !== null &&
       parsedInput.executionTarget !== "demo" &&
@@ -229,6 +306,14 @@ function validatePlannerPayload(value: unknown): OpenAIPlannerPayload | null {
     return null;
   }
 
+  const normalizedSpecialty =
+    typeof parsedInput.specialty === "string" &&
+    appointmentSpecialties.some((entry) => entry === parsedInput.specialty)
+      ? parsedInput.specialty
+      : typeof parsedInput.specialty === "string"
+        ? parsedInput.specialty
+        : null;
+
   return {
     taskType: payload.taskType,
     targetService: payload.targetService,
@@ -236,11 +321,13 @@ function validatePlannerPayload(value: unknown): OpenAIPlannerPayload | null {
     summary: payload.summary,
     confidence: Math.max(0, Math.min(1, payload.confidence)),
     input: {
-      serviceType: typeof parsedInput.serviceType === "string" ? parsedInput.serviceType : null,
+      appointmentKind: parsedInput.appointmentKind,
+      specialty: normalizedSpecialty,
+      insuranceType: parsedInput.insuranceType,
       city: typeof parsedInput.city === "string" ? parsedInput.city : null,
-      applicantName: typeof parsedInput.applicantName === "string" ? parsedInput.applicantName : null,
-      applicantEmail: typeof parsedInput.applicantEmail === "string" ? parsedInput.applicantEmail : null,
-      preferredDates: parsedInput.preferredDates.filter((value): value is string => typeof value === "string"),
+      patientName: typeof parsedInput.patientName === "string" ? parsedInput.patientName : null,
+      patientEmail: typeof parsedInput.patientEmail === "string" ? parsedInput.patientEmail : null,
+      preferredDates: parsedInput.preferredDates.filter((entry): entry is string => typeof entry === "string"),
       notes: typeof parsedInput.notes === "string" ? parsedInput.notes : null,
       language: parsedInput.language,
       executionTarget: parsedInput.executionTarget,
@@ -326,7 +413,7 @@ async function requestPlannerPayload(params: {
         format: {
           type: "json_schema",
           name: "dream_agent_planner",
-          description: "Structured task extraction for a bureaucracy workflow planner.",
+          description: "Structured task extraction for a medical appointment workflow planner.",
           strict: true,
           schema: plannerSchema,
         },
@@ -361,10 +448,12 @@ async function requestPlannerPayload(params: {
 
 function trimPatch(payload: OpenAIPlannerPayload): Partial<TaskInput> {
   return {
-    serviceType: payload.input.serviceType ?? undefined,
+    appointmentKind: payload.input.appointmentKind ?? undefined,
+    specialty: payload.input.specialty ?? undefined,
+    insuranceType: payload.input.insuranceType ?? undefined,
     city: payload.input.city ?? undefined,
-    applicantName: payload.input.applicantName ?? undefined,
-    applicantEmail: payload.input.applicantEmail ?? undefined,
+    patientName: payload.input.patientName ?? undefined,
+    patientEmail: payload.input.patientEmail ?? undefined,
     preferredDates: payload.input.preferredDates.length > 0 ? payload.input.preferredDates : undefined,
     notes: payload.input.notes ?? undefined,
     language: payload.input.language ?? undefined,
@@ -377,17 +466,23 @@ export function mergeTaskInput(current: TaskInput, patch: Partial<TaskInput>): T
     ...current,
   };
 
-  if (patch.serviceType) {
-    next.serviceType = patch.serviceType;
+  if (patch.appointmentKind) {
+    next.appointmentKind = patch.appointmentKind;
+  }
+  if (patch.specialty) {
+    next.specialty = patch.specialty;
+  }
+  if (patch.insuranceType) {
+    next.insuranceType = patch.insuranceType;
   }
   if (patch.city) {
     next.city = patch.city;
   }
-  if (patch.applicantName) {
-    next.applicantName = patch.applicantName;
+  if (patch.patientName) {
+    next.patientName = patch.patientName;
   }
-  if (patch.applicantEmail) {
-    next.applicantEmail = patch.applicantEmail;
+  if (patch.patientEmail) {
+    next.patientEmail = patch.patientEmail;
   }
   if (patch.preferredDates && patch.preferredDates.length > 0) {
     next.preferredDates = patch.preferredDates;

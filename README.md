@@ -1,6 +1,6 @@
 # Harbor Hackathon Prototype
 
-Calm operator for high-friction digital errands, starting with Berlin Burgeramt booking.
+Calm operator for high-friction digital errands, currently focused on doctor and dentist appointment hunting.
 
 ## Run
 
@@ -38,6 +38,6 @@ APP_BASE_URL=http://127.0.0.1:3000
 
 ## Current Workflow
 
-- Fully shaped path: Burgeramt appointment booking
-- Controlled happy path: `/demo/burgeramt`
-- Live path: reachability probe only, intentionally blocked before brittle public-site submission
+- Fully shaped path: doctor and dentist appointment hunting
+- Controlled happy path: `/demo/appointments`
+- Live path: compatibility stub only, intentionally blocked before real provider-site submission

@@ -9,7 +9,7 @@ export const brand = {
   supportingCopy:
     "Harbor turns difficult online errands into a guided run with one clear next step, approval before irreversible actions, and proof you can keep.",
   exampleCopy:
-    "Burgeramt booking is the first workflow. The product language stays broader: intake, clarification, execution, review, and evidence.",
+    "Appointment Hunter is the current workflow: find a doctor or dentist slot, review the booking summary, and approve only the final handoff.",
   basicLabel: "Basic",
   advancedLabel: "Advanced",
   trustPillars: [
@@ -23,21 +23,21 @@ export const brand = {
     },
     {
       label: "Current workflow",
-      value: "Berlin Burgeramt booking",
+      value: "Doctor and dentist appointment search",
     },
   ],
   demo: {
     eyebrow: "Harbor demo workflow",
-    title: "Reliable booking flow for walkthroughs and approvals.",
+    title: "Controlled provider search for walkthroughs and approvals.",
     description:
-      "This controlled page mirrors a public-service booking flow while keeping the browser path stable for demos, screenshots, and approval checkpoints.",
+      "This controlled page mirrors an appointment marketplace while keeping the browser path stable for demos, screenshots, and approval checkpoints.",
   },
 } as const;
 
 export function executionTargetLabel(target: "demo" | "live", viewMode: ViewMode) {
   if (target === "demo") {
-    return viewMode === "basic" ? "Guided demo workflow" : "Controlled demo flow";
+    return viewMode === "basic" ? "Controlled appointment workflow" : "Controlled appointment demo";
   }
 
-  return viewMode === "basic" ? "Live Berlin service check" : "Live Berlin service probe";
+  return viewMode === "basic" ? "Human-supervised live handoff" : "Compatibility live stub";
 }

@@ -8,7 +8,7 @@ import {
   type TraceEvent,
 } from "@/app/lib/domain";
 import { getExecutor } from "@/app/lib/executors";
-import { BURGERAMT_LIVE_URL } from "@/app/lib/executors/burgeramt/shared";
+import { APPOINTMENT_HUNTER_LIVE_URL } from "@/app/lib/executors/appointment-hunter/shared";
 import { ensureTaskTrace, hasLangfuseConfig, syncTaskTelemetry, withTaskObservation } from "@/app/lib/langfuse";
 import { mergeTaskInput, planTaskUpdate, type PlannerDecision } from "@/app/lib/planner";
 import { requireTask, saveTask } from "@/app/lib/task-store";
@@ -132,7 +132,7 @@ async function buildBaseTask(message: string, executionTarget: ExecutionTarget) 
     status: "ready",
     stage: "intake",
     riskLevel: "high",
-    targetService: "Berlin Burgeramt",
+    targetService: "Medical appointment search",
     goal: message,
     createdAt,
     updatedAt: createdAt,
@@ -144,7 +144,7 @@ async function buildBaseTask(message: string, executionTarget: ExecutionTarget) 
     },
     runtime: {
       traceId: "",
-      liveUrl: BURGERAMT_LIVE_URL,
+      liveUrl: APPOINTMENT_HUNTER_LIVE_URL,
       plannerProvider: process.env.OPENAI_API_KEY ? "openai" : "heuristic",
       plannerModel: process.env.OPENAI_API_KEY
         ? process.env.OPENAI_PLANNER_MODEL ?? "gpt-5.4-mini"
@@ -239,7 +239,8 @@ async function progressTask(task: Task) {
         "prepare",
         {
           executionTarget: task.executionTarget,
-          serviceType: task.input.serviceType,
+          appointmentKind: task.input.appointmentKind,
+          specialty: task.input.specialty,
         },
         async () => executor.prepareSubmission(task),
       );

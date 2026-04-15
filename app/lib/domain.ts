@@ -79,10 +79,12 @@ export interface TaskEvaluation {
 }
 
 export interface TaskInput {
-  serviceType?: string;
+  appointmentKind?: "doctor" | "dentist";
+  specialty?: string;
+  insuranceType?: "public" | "private" | "self_pay";
   city?: string;
-  applicantName?: string;
-  applicantEmail?: string;
+  patientName?: string;
+  patientEmail?: string;
   preferredDates?: string[];
   notes?: string;
   language?: "en" | "de";
@@ -92,6 +94,7 @@ export interface TaskInput {
 export interface TaskRuntime {
   traceId: string;
   selectedSlot?: string;
+  selectedProvider?: string;
   liveUrl?: string;
   confirmationCode?: string;
   plannerProvider?: "openai" | "heuristic";

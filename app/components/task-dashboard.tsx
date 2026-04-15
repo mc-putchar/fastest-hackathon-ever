@@ -10,16 +10,16 @@ type CreateResponse = {
 
 const starterPrompts = [
   {
-    label: "Earliest Anmeldung appointment",
-    prompt: "Book me the earliest Burgeramt appointment for Anmeldung in Berlin.",
+    label: "Earliest dentist slot",
+    prompt: "Book me the earliest dentist appointment in Berlin.",
   },
   {
-    label: "Need docs first",
-    prompt: "I need a Burgeramt appointment in Berlin.",
+    label: "Dermatologist search",
+    prompt: "Find me the earliest dermatologist appointment in Berlin with public insurance.",
   },
   {
     label: "Simulate no slots",
-    prompt: "Book me a Burgeramt appointment in Berlin. simulate:no-slots",
+    prompt: "Find me a cardiology appointment in Berlin with private insurance. simulate:no-slots",
   },
 ];
 
@@ -86,11 +86,11 @@ function proofBundleCopy(task: Task | null) {
 export function TaskDashboard() {
   const [draft, setDraft] = useState(starterPrompts[0].prompt);
   const [followUp, setFollowUp] = useState("");
-  const [executionTarget, setExecutionTarget] = useState<"demo" | "live">("demo");
   const [viewMode, setViewMode] = useState<ViewMode>("basic");
   const [task, setTask] = useState<Task | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const executionTarget: "demo" = "demo";
 
   const approval = pendingApproval(task);
   const visibleMessages = task ? (viewMode === "basic" ? task.messages.slice(-4) : task.messages) : [];
@@ -103,11 +103,11 @@ export function TaskDashboard() {
         return brand.trustPillars;
       }
 
-      return [
-        {
-          label: "Current workflow",
-          value: task.targetService,
-        },
+        return [
+          {
+            label: "Current workflow",
+            value: task.targetService,
+          },
         {
           label: "Approval step",
           value: approval ? "Waiting on your review" : "Only when needed",
@@ -122,7 +122,7 @@ export function TaskDashboard() {
     if (!task) {
       return [
         { label: "Task type", value: "Appointment booking" },
-        { label: "Execution path", value: "Demo or live probe" },
+        { label: "Execution path", value: "Controlled appointment demo" },
         { label: "Risk level", value: "Approval-gated" },
       ];
     }
@@ -269,23 +269,8 @@ export function TaskDashboard() {
                 className="textarea"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Book me the earliest Burgeramt appointment for Anmeldung in Berlin."
+                placeholder="Book me the earliest dentist appointment in Berlin."
               />
-            </div>
-
-            <div>
-              <label className="label" htmlFor="target">
-                Execution target
-              </label>
-              <select
-                id="target"
-                className="select"
-                value={executionTarget}
-                onChange={(event) => setExecutionTarget(event.target.value as "demo" | "live")}
-              >
-                <option value="demo">{executionTargetLabel("demo", viewMode)}</option>
-                <option value="live">{executionTargetLabel("live", viewMode)}</option>
-              </select>
             </div>
 
             <div className="button-row">
@@ -297,7 +282,7 @@ export function TaskDashboard() {
               >
                 Start run
               </button>
-              <a className="button secondary" href="/demo/burgeramt">
+              <a className="button secondary" href="/demo/appointments">
                 Open demo workflow
               </a>
             </div>
@@ -382,7 +367,7 @@ export function TaskDashboard() {
                       className="textarea"
                       value={followUp}
                       onChange={(event) => setFollowUp(event.target.value)}
-                      placeholder="My name is Alex Example and my email is alex@example.com."
+                      placeholder="My name is Alex Example, I have public insurance, and my email is alex@example.com."
                     />
                   </div>
                   <div className="button-row">
@@ -462,11 +447,11 @@ export function TaskDashboard() {
                 <div className="summary-list">
                   <div className="summary-item">
                     <span className="label">Execution path</span>
-                    <strong>{executionTargetLabel(task?.executionTarget ?? executionTarget, "basic")}</strong>
+                    <strong>{executionTargetLabel(task?.executionTarget ?? "demo", "basic")}</strong>
                   </div>
                   <div className="summary-item">
                     <span className="label">Current workflow</span>
-                    <strong>{task?.targetService ?? "Berlin Burgeramt booking"}</strong>
+                    <strong>{task?.targetService ?? "Doctor and dentist appointment search"}</strong>
                   </div>
                   <div className="summary-item">
                     <span className="label">Latest update</span>

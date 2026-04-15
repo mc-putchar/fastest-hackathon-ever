@@ -1,25 +1,45 @@
-import { createId, nowIso, type TaskArtifact } from "@/app/lib/domain";
+import { createId, nowIso, type Task, type TaskArtifact } from "@/app/lib/domain";
 import type { TaskRequirement } from "@/app/lib/executors/types";
 
-export const BURGERAMT_LIVE_URL = "https://service.berlin.de/terminvereinbarung/";
+export const APPOINTMENT_HUNTER_LIVE_URL = "https://www.doctolib.de/";
 
-export const burgeramtRequirements: TaskRequirement[] = [
+export const appointmentHunterRequirements: TaskRequirement[] = [
   {
-    field: "serviceType",
-    label: "service type",
-    reason: "Burgeramt flows branch early based on the selected service.",
+    field: "appointmentKind",
+    label: "appointment type",
+    reason: "The search flow needs to know whether it should look for a doctor or a dentist.",
   },
   {
-    field: "applicantName",
-    label: "full legal name",
-    reason: "The booking summary and confirmation need the applicant identity.",
+    field: "specialty",
+    label: "specialty",
+    reason: "Doctor searches require a specialty so the results stay relevant.",
   },
   {
-    field: "applicantEmail",
-    label: "confirmation email",
-    reason: "Booking confirmations and follow-up instructions are sent here.",
+    field: "insuranceType",
+    label: "insurance type",
+    reason: "Provider availability changes based on insurance acceptance.",
+  },
+  {
+    field: "patientName",
+    label: "full name",
+    reason: "The review step and final confirmation need the patient identity.",
+  },
+  {
+    field: "patientEmail",
+    label: "email address",
+    reason: "Booking confirmations and instructions are sent here.",
   },
 ];
+
+export function missingAppointmentRequirements(task: Task) {
+  return appointmentHunterRequirements.filter((requirement) => {
+    if (requirement.field === "specialty") {
+      return task.input.appointmentKind === "doctor" && !task.input.specialty;
+    }
+
+    return !task.input[requirement.field];
+  });
+}
 
 export function buildSvgArtifact(title: string, lines: string[], accent: string) {
   const rows = lines

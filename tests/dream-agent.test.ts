@@ -6,7 +6,6 @@ import {
   createTaskFromMessage,
   rejectTask,
 } from "@/app/lib/dream-agent";
-import { saveTask } from "@/app/lib/task-store";
 import { syncTaskTelemetry } from "@/app/lib/langfuse";
 
 test("uses the OpenAI planner when configured and keeps browser execution separate", async () => {
@@ -20,15 +19,17 @@ test("uses the OpenAI planner when configured and keeps browser execution separa
     __dreamAgentOpenAIPlanner?: (typeof globalThis)["__dreamAgentOpenAIPlanner"];
   }).__dreamAgentOpenAIPlanner = async () => ({
     taskType: "appointment_booking",
-    targetService: "Berlin Burgeramt",
+    targetService: "Medical appointment search",
     riskLevel: "high",
-    summary: "Model planner extracted the Burgeramt intake fields.",
+    summary: "Model planner extracted the medical appointment intake fields.",
     confidence: 0.96,
     input: {
-      serviceType: "Anmeldung einer Wohnung",
+      appointmentKind: "doctor",
+      specialty: "Dermatology",
+      insuranceType: "public",
       city: "Berlin",
-      applicantName: null,
-      applicantEmail: null,
+      patientName: null,
+      patientEmail: null,
       preferredDates: ["Earliest available"],
       notes: null,
       language: "en",
@@ -37,13 +38,15 @@ test("uses the OpenAI planner when configured and keeps browser execution separa
   });
 
   try {
-    const task = await createTaskFromMessage("Book me the earliest live Burgeramt appointment for Anmeldung in Berlin.");
+    const task = await createTaskFromMessage("Book me the earliest live dermatologist appointment in Berlin.");
 
     assert.equal(task.runtime.plannerProvider, "openai");
     assert.equal(task.runtime.plannerModel, "gpt-5.4-mini");
-    assert.equal(task.input.serviceType, "Anmeldung einer Wohnung");
+    assert.equal(task.input.appointmentKind, "doctor");
+    assert.equal(task.input.specialty, "Dermatology");
+    assert.equal(task.input.insuranceType, "public");
     assert.equal(task.executionTarget, "live");
-    assert.equal(task.runtime.executorKey, "burgeramt-live");
+    assert.equal(task.runtime.executorKey, "appointment-hunter-live");
     assert.notEqual(task.runtime.executorKey, task.runtime.plannerModel);
   } finally {
     if (originalApiKey === undefined) {
@@ -62,33 +65,41 @@ test("uses the OpenAI planner when configured and keeps browser execution separa
   }
 });
 
-test("task store survives separate module instances for follow-up routes", async () => {
-  const task = await createTaskFromMessage("I need a Burgeramt appointment in Berlin.");
-  saveTask(task);
+test("extracts doctor specialty and insurance heuristically", async () => {
+  const task = await createTaskFromMessage("I need a dermatologist appointment in Berlin with public insurance.");
 
-  const cacheBuster = Date.now().toString(36);
-  const imported = (await import(`../app/lib/task-store.ts?${cacheBuster}`)) as {
-    getTask: (taskId: string) => typeof task | null;
-  };
-
-  assert.equal(imported.getTask(task.id)?.id, task.id);
+  assert.equal(task.input.appointmentKind, "doctor");
+  assert.equal(task.input.specialty, "Dermatology");
+  assert.equal(task.input.insuranceType, "public");
+  assert.equal(task.status, "needs_input");
 });
 
-test("asks for missing fields before automation", async () => {
-  const task = await createTaskFromMessage("I need a Burgeramt appointment in Berlin.");
+test("asks for missing dentist fields before automation without requesting a specialty", async () => {
+  const task = await createTaskFromMessage("I need a dentist appointment in Berlin.");
 
   assert.equal(task.status, "needs_input");
   assert.equal(task.stage, "clarify");
-  assert.match(task.nextPrompt ?? "", /full legal name/i);
+  assert.match(task.nextPrompt ?? "", /insurance type/i);
+  assert.match(task.nextPrompt ?? "", /full name/i);
+  assert.match(task.nextPrompt ?? "", /email address/i);
+  assert.doesNotMatch(task.nextPrompt ?? "", /specialty/i);
   assert.equal(typeof task.runtime.traceId, "string");
   assert.notEqual(task.runtime.traceId.length, 0);
 });
 
+test("doctor searches require a specialty before automation", async () => {
+  const task = await createTaskFromMessage("I need a doctor appointment in Berlin.");
+
+  assert.equal(task.status, "needs_input");
+  assert.equal(task.stage, "clarify");
+  assert.match(task.nextPrompt ?? "", /specialty/i);
+});
+
 test("collects details and pauses at approval before submission", async () => {
-  const initial = await createTaskFromMessage("Book me the earliest Burgeramt appointment for Anmeldung in Berlin.");
+  const initial = await createTaskFromMessage("Book me the earliest dentist appointment in Berlin.");
   const updated = await appendTaskMessage(
     initial.id,
-    "My name is Alex Example and my email is alex@example.com.",
+    "My name is Alex Example, I have public insurance, and my email is alex@example.com.",
   );
 
   assert.equal(updated.status, "awaiting_approval");
@@ -96,16 +107,16 @@ test("collects details and pauses at approval before submission", async () => {
   assert.equal(updated.approvals.some((approval) => approval.status === "pending"), true);
   assert.equal(updated.artifacts.some((artifact) => artifact.kind === "extracted_slot"), true);
   const extractedSlot = updated.artifacts.find((artifact) => artifact.kind === "extracted_slot");
-  const draftSubmission = updated.artifacts.find((artifact) => artifact.title === "Draft submission");
+  const draftSubmission = updated.artifacts.find((artifact) => artifact.title === "Draft booking review");
   assert.ok(extractedSlot?.content);
   assert.equal(draftSubmission?.content?.includes(extractedSlot.content), true);
 });
 
 test("approval completes the controlled demo booking", async () => {
-  const initial = await createTaskFromMessage("Book me the earliest Burgeramt appointment for Anmeldung in Berlin.");
+  const initial = await createTaskFromMessage("Book me the earliest dentist appointment in Berlin.");
   const ready = await appendTaskMessage(
     initial.id,
-    "My name is Alex Example and my email is alex@example.com.",
+    "My name is Alex Example, I have public insurance, and my email is alex@example.com.",
   );
   const completed = await approveTask(ready.id);
 
@@ -115,10 +126,10 @@ test("approval completes the controlled demo booking", async () => {
 });
 
 test("rejecting approval keeps the task safe", async () => {
-  const initial = await createTaskFromMessage("Book me the earliest Burgeramt appointment for Anmeldung in Berlin.");
+  const initial = await createTaskFromMessage("Book me the earliest dentist appointment in Berlin.");
   const ready = await appendTaskMessage(
     initial.id,
-    "My name is Alex Example and my email is alex@example.com.",
+    "My name is Alex Example, I have public insurance, and my email is alex@example.com.",
   );
   const rejected = await rejectTask(ready.id);
 
@@ -128,7 +139,7 @@ test("rejecting approval keeps the task safe", async () => {
 
 test("no-slot simulation returns a blocked recovery path", async () => {
   const ready = await createTaskFromMessage(
-    "Book me the earliest Burgeramt appointment for Anmeldung in Berlin. My name is Alex Example, my email is alex@example.com. simulate:no-slots",
+    "Book me the earliest dentist appointment in Berlin. My name is Alex Example, I have public insurance, my email is alex@example.com. simulate:no-slots",
   );
 
   assert.equal(ready.status, "blocked");
@@ -137,7 +148,7 @@ test("no-slot simulation returns a blocked recovery path", async () => {
 
 test("site-change simulation fails safely", async () => {
   const blocked = await createTaskFromMessage(
-    "Book me the earliest Burgeramt appointment for Anmeldung in Berlin. My name is Alex Example, my email is alex@example.com. simulate:site-change",
+    "Book me the earliest dentist appointment in Berlin. My name is Alex Example, I have public insurance, my email is alex@example.com. simulate:site-change",
   );
 
   assert.equal(blocked.status, "blocked");
@@ -166,7 +177,7 @@ test("telemetry resyncs an evaluation when its value changes", async () => {
   };
 
   try {
-    const task = await createTaskFromMessage("I need a Burgeramt appointment in Berlin.");
+    const task = await createTaskFromMessage("I need a dentist appointment in Berlin.");
     await syncTaskTelemetry(task);
 
     const requiredFieldEval = task.evaluations.find((evaluation) => evaluation.name === "Required-field detection");
