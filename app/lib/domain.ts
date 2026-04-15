@@ -12,6 +12,7 @@ export type RiskLevel = "low" | "medium" | "high";
 export type ArtifactKind = "screenshot" | "extracted_slot" | "form_preview" | "confirmation" | "note";
 export type ExecutionTarget = "demo" | "live";
 export type MessageRole = "user" | "agent" | "system";
+export type WeekdayCode = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
 export type ExecutorErrorCode =
   | "missing_info"
   | "no_appointments_available"
@@ -86,6 +87,7 @@ export interface TaskInput {
   patientName?: string;
   patientEmail?: string;
   preferredDates?: string[];
+  unavailableWeekdays?: WeekdayCode[];
   notes?: string;
   language?: "en" | "de";
   executionTarget: ExecutionTarget;

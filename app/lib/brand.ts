@@ -39,5 +39,5 @@ export function executionTargetLabel(target: "demo" | "live", viewMode: ViewMode
     return viewMode === "basic" ? "Controlled appointment workflow" : "Controlled appointment demo";
   }
 
-  return viewMode === "basic" ? "Human-supervised live handoff" : "Compatibility live stub";
+  return viewMode === "basic" ? "Live provider marketplace search" : "Live Doctolib search";
 }

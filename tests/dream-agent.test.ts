@@ -31,6 +31,7 @@ test("uses the OpenAI planner when configured and keeps browser execution separa
       patientName: null,
       patientEmail: null,
       preferredDates: ["Earliest available"],
+      unavailableWeekdays: [],
       notes: null,
       language: "en",
       executionTarget: "live",
@@ -95,6 +96,52 @@ test("doctor searches require a specialty before automation", async () => {
   assert.match(task.nextPrompt ?? "", /specialty/i);
 });
 
+test("live search completes with extracted marketplace matches and no approval", async () => {
+  const originalSearch = (globalThis as { __dreamAgentLiveAppointmentSearch?: unknown }).__dreamAgentLiveAppointmentSearch;
+
+  (globalThis as {
+    __dreamAgentLiveAppointmentSearch?: (typeof globalThis)["__dreamAgentLiveAppointmentSearch"];
+  }).__dreamAgentLiveAppointmentSearch = async () => ({
+    providerKey: "doctolib",
+    providerLabel: "Doctolib",
+    searchUrl: "https://www.doctolib.de/hautarzt/berlin?insurance_sector=public",
+    matches: [
+      {
+        providerName: "Praxis Dr. Lenz",
+        providerType: "Hautarzt",
+        address: "Friedrichstraße 89, 10117 Berlin",
+        availabilityLabel: "Donnerstag 16 Apr. 09:15",
+        href: "https://www.doctolib.de/hautarzt/berlin/praxis-dr-lenz",
+        source: "Doctolib",
+      },
+      {
+        providerName: "Hautzentrum Spree",
+        providerType: "Hautarzt",
+        address: "Warschauer Straße 10, 10243 Berlin",
+        availabilityLabel: "Freitag 17 Apr. 08:40",
+        href: "https://www.doctolib.de/hautarzt/berlin/hautzentrum-spree",
+        source: "Doctolib",
+      },
+    ],
+  });
+
+  try {
+    const ready = await createTaskFromMessage(
+      "Find me the earliest live dermatologist appointment in Berlin with public insurance. My name is Alex Example and my email is alex@example.com.",
+      "live",
+    );
+
+    assert.equal(ready.status, "completed");
+    assert.equal(ready.stage, "complete");
+    assert.equal(ready.approvals.some((approval) => approval.status === "pending"), false);
+    assert.equal(ready.runtime.executorKey, "appointment-hunter-live");
+    assert.equal(ready.runtime.selectedProvider, "Praxis Dr. Lenz");
+    assert.equal(ready.artifacts.some((artifact) => artifact.title === "Best live appointment option"), true);
+  } finally {
+    (globalThis as { __dreamAgentLiveAppointmentSearch?: unknown }).__dreamAgentLiveAppointmentSearch = originalSearch;
+  }
+});
+
 test("collects details and pauses at approval before submission", async () => {
   const initial = await createTaskFromMessage("Book me the earliest dentist appointment in Berlin.");
   const updated = await appendTaskMessage(
@@ -110,6 +157,28 @@ test("collects details and pauses at approval before submission", async () => {
   const draftSubmission = updated.artifacts.find((artifact) => artifact.title === "Draft booking review");
   assert.ok(extractedSlot?.content);
   assert.equal(draftSubmission?.content?.includes(extractedSlot.content), true);
+});
+
+test("follow-up constraints update the active goal and rerun slot selection", async () => {
+  const initial = await createTaskFromMessage(
+    "Book me the earliest dentist appointment in Berlin. My name is Alex Example, I have public insurance, and my email is alex@example.com.",
+  );
+
+  assert.equal(initial.status, "awaiting_approval");
+  const firstApproval = initial.approvals.find((approval) => approval.status === "pending");
+  assert.match(String(firstApproval?.payload?.selectedSlot ?? ""), /Tue,/);
+
+  const updated = await appendTaskMessage(initial.id, "I can't make it on Tuesday.");
+  const pendingApproval = updated.approvals.find((approval) => approval.status === "pending");
+  const extractedSlot = updated.artifacts.find((artifact) => artifact.kind === "extracted_slot");
+
+  assert.equal(updated.status, "awaiting_approval");
+  assert.match(updated.goal, /Update: I can't make it on Tuesday\./);
+  assert.deepEqual(updated.input.unavailableWeekdays, ["Tue"]);
+  assert.match(String(pendingApproval?.payload?.selectedSlot ?? ""), /Wed,|Thu,|Fri,/);
+  assert.doesNotMatch(String(pendingApproval?.payload?.selectedSlot ?? ""), /Tue,/);
+  assert.match(String(extractedSlot?.content ?? ""), /Wed,|Thu,|Fri,/);
+  assert.doesNotMatch(String(extractedSlot?.content ?? ""), /Tue,/);
 });
 
 test("approval completes the controlled demo booking", async () => {

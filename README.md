@@ -40,4 +40,4 @@ APP_BASE_URL=http://127.0.0.1:3000
 
 - Fully shaped path: doctor and dentist appointment hunting
 - Controlled happy path: `/demo/appointments`
-- Live path: compatibility stub only, intentionally blocked before real provider-site submission
+- Live path: searches real Doctolib listings, captures evidence, and stops before any booking submission

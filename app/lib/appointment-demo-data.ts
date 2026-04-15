@@ -15,6 +15,21 @@ export interface AppointmentProvider {
   slots: AppointmentSlot[];
 }
 
+function slotWeekday(slot: AppointmentSlot) {
+  return slot.label.split(",", 1)[0] as NonNullable<TaskInput["unavailableWeekdays"]>[number];
+}
+
+function filterSlotsByAvailability(
+  slots: AppointmentSlot[],
+  unavailableWeekdays: TaskInput["unavailableWeekdays"],
+) {
+  if (!unavailableWeekdays || unavailableWeekdays.length === 0) {
+    return slots;
+  }
+
+  return slots.filter((slot) => !unavailableWeekdays.includes(slotWeekday(slot)));
+}
+
 export const appointmentSpecialties = ["Dermatology", "Cardiology", "General practice"] as const;
 
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -218,7 +233,9 @@ export const appointmentDemoProviders: AppointmentProvider[] = [
   },
 ];
 
-export function matchingAppointmentProviders(input: Pick<TaskInput, "appointmentKind" | "specialty" | "insuranceType">) {
+export function matchingAppointmentProviders(
+  input: Pick<TaskInput, "appointmentKind" | "specialty" | "insuranceType" | "unavailableWeekdays">,
+) {
   return appointmentDemoProviders
     .filter((provider) => {
       if (input.appointmentKind && provider.appointmentKind !== input.appointmentKind) {
@@ -235,17 +252,40 @@ export function matchingAppointmentProviders(input: Pick<TaskInput, "appointment
 
       return true;
     })
-    .sort((left, right) => left.slots[0].startsAt.localeCompare(right.slots[0].startsAt));
+    .map((provider) => ({
+      provider,
+      availableSlots: filterSlotsByAvailability(provider.slots, input.unavailableWeekdays),
+    }))
+    .filter((entry) => entry.availableSlots.length > 0)
+    .sort((left, right) => left.availableSlots[0].startsAt.localeCompare(right.availableSlots[0].startsAt))
+    .map((entry) => entry.provider);
 }
 
-export function earliestAppointmentMatch(input: Pick<TaskInput, "appointmentKind" | "specialty" | "insuranceType">) {
-  const provider = matchingAppointmentProviders(input)[0];
-  if (!provider) {
-    return null;
-  }
+export function earliestAppointmentMatch(
+  input: Pick<TaskInput, "appointmentKind" | "specialty" | "insuranceType" | "unavailableWeekdays">,
+) {
+  const matches = appointmentDemoProviders
+    .filter((provider) => {
+      if (input.appointmentKind && provider.appointmentKind !== input.appointmentKind) {
+        return false;
+      }
 
-  return {
-    provider,
-    slot: provider.slots[0],
-  };
+      if (provider.appointmentKind === "doctor" && input.specialty && provider.specialty !== input.specialty) {
+        return false;
+      }
+
+      if (input.insuranceType && !provider.insuranceTypes.includes(input.insuranceType)) {
+        return false;
+      }
+
+      return true;
+    })
+    .map((provider) => ({
+      provider,
+      slot: filterSlotsByAvailability(provider.slots, input.unavailableWeekdays)[0],
+    }))
+    .filter((entry): entry is { provider: AppointmentProvider; slot: AppointmentSlot } => Boolean(entry.slot))
+    .sort((left, right) => left.slot.startsAt.localeCompare(right.slot.startsAt));
+
+  return matches[0] ?? null;
 }
