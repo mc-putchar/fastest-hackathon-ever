@@ -1,5 +1,13 @@
 import { appointmentSpecialties } from "@/app/lib/appointment-demo-data";
-import type { ExecutionTarget, RiskLevel, Task, TaskInput, TaskMessage, TaskType } from "@/app/lib/domain";
+import type {
+  ExecutionTarget,
+  RiskLevel,
+  Task,
+  TaskInput,
+  TaskMessage,
+  TaskType,
+  WeekdayCode,
+} from "@/app/lib/domain";
 
 type PlannerReasoningEffort = "minimal" | "low" | "medium" | "high";
 
@@ -30,6 +38,7 @@ interface OpenAIPlannerPayload {
     patientName: string | null;
     patientEmail: string | null;
     preferredDates: string[];
+    unavailableWeekdays: WeekdayCode[];
     notes: string | null;
     language: "en" | "de" | null;
     executionTarget: ExecutionTarget | null;
@@ -87,6 +96,7 @@ const plannerSchema = {
         "patientName",
         "patientEmail",
         "preferredDates",
+        "unavailableWeekdays",
         "notes",
         "language",
         "executionTarget",
@@ -108,6 +118,13 @@ const plannerSchema = {
           type: "array",
           items: { type: "string" },
         },
+        unavailableWeekdays: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+          },
+        },
         notes: { type: ["string", "null"] },
         language: {
           type: ["string", "null"],
@@ -127,6 +144,7 @@ const plannerInstructions = [
   "Your job is only to classify the task and extract structured fields from the user conversation.",
   "Do not invent facts, do not promise actions, and do not generate browser steps.",
   "Prefer null for unknown scalar fields and [] for unknown preferredDates.",
+  "Use unavailableWeekdays for days the user explicitly cannot attend, such as 'not Tuesday' or 'can't do Fridays'.",
   "Only set executionTarget when the user explicitly asks for a live or demo run.",
   "Preserve simulation flags such as simulate:no-slots or simulate:site-change inside notes when they appear.",
   "Map doctor, specialist, and dentist booking requests to appointment_booking and Medical appointment search.",
@@ -176,6 +194,7 @@ function compactInputSnapshot(input: TaskInput) {
     patientName: input.patientName ?? null,
     patientEmail: input.patientEmail ?? null,
     preferredDates: input.preferredDates ?? [],
+    unavailableWeekdays: input.unavailableWeekdays ?? [],
     notes: input.notes ?? null,
     language: input.language ?? null,
     executionTarget: input.executionTarget,
@@ -234,6 +253,43 @@ function inferPreferredDates(message: string) {
   return preferredDates;
 }
 
+const weekdayPatterns: Array<{ value: WeekdayCode; patterns: RegExp[] }> = [
+  { value: "Mon", patterns: [/\bmonday\b/i, /\bmondays\b/i, /\bmon\b/i] },
+  { value: "Tue", patterns: [/\btuesday\b/i, /\btuesdays\b/i, /\btue\b/i, /\btues\b/i] },
+  { value: "Wed", patterns: [/\bwednesday\b/i, /\bwednesdays\b/i, /\bwed\b/i] },
+  { value: "Thu", patterns: [/\bthursday\b/i, /\bthursdays\b/i, /\bthu\b/i, /\bthurs\b/i] },
+  { value: "Fri", patterns: [/\bfriday\b/i, /\bfridays\b/i, /\bfri\b/i] },
+  { value: "Sat", patterns: [/\bsaturday\b/i, /\bsaturdays\b/i, /\bsat\b/i] },
+  { value: "Sun", patterns: [/\bsunday\b/i, /\bsundays\b/i, /\bsun\b/i] },
+] as const;
+
+const unavailableWeekdaySignals = [
+  "can't make",
+  "cannot make",
+  "can't do",
+  "cannot do",
+  "not on",
+  "except",
+  "avoid",
+  "unavailable",
+  "doesn't work",
+  "do not work",
+  "does not work",
+  "no ",
+];
+
+function inferUnavailableWeekdays(message: string): WeekdayCode[] {
+  const normalized = message.toLowerCase();
+  const hasSignal = unavailableWeekdaySignals.some((signal) => normalized.includes(signal));
+  if (!hasSignal) {
+    return [];
+  }
+
+  return weekdayPatterns
+    .filter((weekday) => weekday.patterns.some((pattern) => pattern.test(message)))
+    .map((weekday) => weekday.value);
+}
+
 function heuristicExtract(message: string): OpenAIPlannerPayload {
   const normalized = message.toLowerCase();
   const emailMatch = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
@@ -262,6 +318,7 @@ function heuristicExtract(message: string): OpenAIPlannerPayload {
       patientName: nameMatch ? nameMatch[1].trim().replace(/\.$/, "") : null,
       patientEmail: emailMatch?.[0] ?? null,
       preferredDates: inferPreferredDates(message),
+      unavailableWeekdays: inferUnavailableWeekdays(message),
       notes,
       language: inferLanguage(message),
       executionTarget: /\blive\b/i.test(message) ? "live" : /\bdemo\b/i.test(message) ? "demo" : null,
@@ -291,6 +348,7 @@ function validatePlannerPayload(value: unknown): OpenAIPlannerPayload | null {
   const parsedInput = input as OpenAIPlannerPayload["input"];
   if (
     !Array.isArray(parsedInput.preferredDates) ||
+    !Array.isArray(parsedInput.unavailableWeekdays) ||
     (parsedInput.appointmentKind !== null &&
       parsedInput.appointmentKind !== "doctor" &&
       parsedInput.appointmentKind !== "dentist") ||
@@ -328,6 +386,16 @@ function validatePlannerPayload(value: unknown): OpenAIPlannerPayload | null {
       patientName: typeof parsedInput.patientName === "string" ? parsedInput.patientName : null,
       patientEmail: typeof parsedInput.patientEmail === "string" ? parsedInput.patientEmail : null,
       preferredDates: parsedInput.preferredDates.filter((entry): entry is string => typeof entry === "string"),
+      unavailableWeekdays: parsedInput.unavailableWeekdays.filter(
+        (entry): entry is WeekdayCode =>
+          entry === "Mon" ||
+          entry === "Tue" ||
+          entry === "Wed" ||
+          entry === "Thu" ||
+          entry === "Fri" ||
+          entry === "Sat" ||
+          entry === "Sun",
+      ),
       notes: typeof parsedInput.notes === "string" ? parsedInput.notes : null,
       language: parsedInput.language,
       executionTarget: parsedInput.executionTarget,
@@ -455,6 +523,8 @@ function trimPatch(payload: OpenAIPlannerPayload): Partial<TaskInput> {
     patientName: payload.input.patientName ?? undefined,
     patientEmail: payload.input.patientEmail ?? undefined,
     preferredDates: payload.input.preferredDates.length > 0 ? payload.input.preferredDates : undefined,
+    unavailableWeekdays:
+      payload.input.unavailableWeekdays.length > 0 ? payload.input.unavailableWeekdays : undefined,
     notes: payload.input.notes ?? undefined,
     language: payload.input.language ?? undefined,
     executionTarget: payload.input.executionTarget ?? undefined,
@@ -487,6 +557,9 @@ export function mergeTaskInput(current: TaskInput, patch: Partial<TaskInput>): T
   if (patch.preferredDates && patch.preferredDates.length > 0) {
     next.preferredDates = patch.preferredDates;
   }
+  if (patch.unavailableWeekdays) {
+    next.unavailableWeekdays = [...patch.unavailableWeekdays];
+  }
   if (patch.language) {
     next.language = patch.language;
   }
@@ -513,9 +586,10 @@ export async function planTaskUpdate(params: {
   messages: Pick<TaskMessage, "role" | "content">[];
 }): Promise<PlannerDecision> {
   const model = getPlannerModel();
+  const heuristicContext = params.task.goal || params.latestMessage;
 
   if (!hasOpenAIPlannerConfig()) {
-    const fallback = heuristicExtract(params.latestMessage);
+    const fallback = heuristicExtract(heuristicContext);
     return {
       provider: "heuristic",
       mode: "fallback",
@@ -550,7 +624,7 @@ export async function planTaskUpdate(params: {
       confidence: payload.confidence,
     };
   } catch (error) {
-    const fallback = heuristicExtract(params.latestMessage);
+    const fallback = heuristicExtract(heuristicContext);
     return {
       provider: "heuristic",
       mode: "fallback",

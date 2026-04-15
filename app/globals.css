@@ -536,6 +536,22 @@ img {
   height: 132px;
 }
 
+.artifact-link {
+  display: inline-flex;
+  margin-top: 12px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(12, 138, 133, 0.12);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  text-decoration: none;
+}
+
+.artifact-link:hover {
+  background: rgba(12, 138, 133, 0.18);
+}
+
 .code {
   display: inline-block;
   border-radius: 10px;

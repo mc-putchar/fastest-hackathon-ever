@@ -83,14 +83,30 @@ function proofBundleCopy(task: Task | null) {
   return `${task.artifacts.length} saved item${task.artifacts.length === 1 ? "" : "s"} attached to this run.`;
 }
 
+function ArtifactPreview({ artifact, compact = false }: { artifact: Task["artifacts"][number]; compact?: boolean }) {
+  return (
+    <article className={`artifact-card ${compact ? "compact" : ""}`.trim()}>
+      {artifact.kind === "screenshot" && artifact.href ? <img src={artifact.href} alt={artifact.title} /> : null}
+      <strong>{artifact.title}</strong>
+      <p>{artifact.summary}</p>
+      {artifact.content ? <pre className="code-block">{artifact.content}</pre> : null}
+      {artifact.href && artifact.kind !== "screenshot" ? (
+        <a className="artifact-link" href={artifact.href} target="_blank" rel="noreferrer">
+          Open source
+        </a>
+      ) : null}
+    </article>
+  );
+}
+
 export function TaskDashboard() {
   const [draft, setDraft] = useState(starterPrompts[0].prompt);
   const [followUp, setFollowUp] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("basic");
   const [task, setTask] = useState<Task | null>(null);
+  const [executionTarget, setExecutionTarget] = useState<"demo" | "live">("demo");
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const executionTarget: "demo" = "demo";
 
   const approval = pendingApproval(task);
   const visibleMessages = task ? (viewMode === "basic" ? task.messages.slice(-4) : task.messages) : [];
@@ -122,7 +138,7 @@ export function TaskDashboard() {
     if (!task) {
       return [
         { label: "Task type", value: "Appointment booking" },
-        { label: "Execution path", value: "Controlled appointment demo" },
+        { label: "Execution path", value: executionTargetLabel(executionTarget, "advanced") },
         { label: "Risk level", value: "Approval-gated" },
       ];
     }
@@ -132,7 +148,7 @@ export function TaskDashboard() {
       { label: "Execution path", value: executionTargetLabel(task.executionTarget, "advanced") },
       { label: "Risk level", value: task.riskLevel },
     ];
-  }, [approval, task, viewMode]);
+  }, [approval, executionTarget, task, viewMode]);
 
   async function createTask(prompt: string) {
     setIsWorking(true);
@@ -285,6 +301,31 @@ export function TaskDashboard() {
               <a className="button secondary" href="/demo/appointments">
                 Open demo workflow
               </a>
+            </div>
+
+            <div className="stack-tight">
+              <span className="label">Execution path</span>
+              <div className="mode-switch" aria-label="Execution target">
+                {[
+                  { label: "Demo", value: "demo" as const },
+                  { label: "Live", value: "live" as const },
+                ].map((target) => (
+                  <button
+                    key={target.value}
+                    type="button"
+                    className={`mode-button ${executionTarget === target.value ? "active" : ""}`}
+                    onClick={() => setExecutionTarget(target.value)}
+                    aria-pressed={executionTarget === target.value}
+                  >
+                    {target.label}
+                  </button>
+                ))}
+              </div>
+              <p className="muted">
+                {executionTarget === "demo"
+                  ? "Use the controlled marketplace when you want a stable end-to-end walkthrough."
+                  : "Use the live path to search real Doctolib listings and stop before any booking submission."}
+              </p>
             </div>
 
             <div className="chip-row">
@@ -473,13 +514,7 @@ export function TaskDashboard() {
                 {task && recentArtifacts.length > 0 ? (
                   <div className="artifact-grid compact">
                     {recentArtifacts.map((artifact) => (
-                      <article key={artifact.id} className="artifact-card compact">
-                        {artifact.kind === "screenshot" && artifact.href ? (
-                          <img src={artifact.href} alt={artifact.title} />
-                        ) : null}
-                        <strong>{artifact.title}</strong>
-                        <p>{artifact.summary}</p>
-                      </article>
+                      <ArtifactPreview key={artifact.id} artifact={artifact} compact />
                     ))}
                   </div>
                 ) : (
@@ -523,14 +558,7 @@ export function TaskDashboard() {
                 <p className="eyebrow">Evidence</p>
                 <div className="artifact-grid">
                   {recentArtifacts.map((artifact) => (
-                    <article key={artifact.id} className="artifact-card">
-                      {artifact.kind === "screenshot" && artifact.href ? (
-                        <img src={artifact.href} alt={artifact.title} />
-                      ) : null}
-                      <strong>{artifact.title}</strong>
-                      <p>{artifact.summary}</p>
-                      {artifact.content ? <pre className="code-block">{artifact.content}</pre> : null}
-                    </article>
+                    <ArtifactPreview key={artifact.id} artifact={artifact} />
                   ))}
                 </div>
               </section>

@@ -1,5 +1,12 @@
 import { earliestAppointmentMatch } from "@/app/lib/appointment-demo-data";
-import { createId, nowIso, type ApprovalRequest, type ExecutorResult, type Task } from "@/app/lib/domain";
+import {
+  createId,
+  nowIso,
+  type ApprovalRequest,
+  type ExecutorResult,
+  type Task,
+  type WeekdayCode,
+} from "@/app/lib/domain";
 import type { PreparedSubmission, RequirementCollection, ServiceExecutor } from "@/app/lib/executors/types";
 import {
   appointmentHunterRequirements,
@@ -60,6 +67,10 @@ async function tryDemoPlaywright(task: Task) {
 function reviewSummary(task: Task, providerName: string, selectedSlot: string) {
   const label = task.input.appointmentKind === "dentist" ? "Dentist visit" : `${task.input.specialty} visit`;
   return `${label} for ${task.input.patientName} (${task.input.patientEmail}) · ${providerName} · ${selectedSlot}`;
+}
+
+function slotWeekday(label: string) {
+  return label.split(",", 1)[0] as WeekdayCode;
 }
 
 export const appointmentHunterDemoExecutor: ServiceExecutor = {
@@ -153,6 +164,7 @@ export const appointmentHunterDemoExecutor: ServiceExecutor = {
       appointmentKind: task.input.appointmentKind,
       specialty: task.input.specialty,
       insuranceType: task.input.insuranceType,
+      unavailableWeekdays: task.input.unavailableWeekdays,
     });
 
     if (!matched) {
@@ -174,10 +186,13 @@ export const appointmentHunterDemoExecutor: ServiceExecutor = {
     }
 
     const browserRun = await tryDemoPlaywright(task);
-    const selectedProvider = browserRun?.providerName ?? matched.provider.name;
-    const selectedSlot = browserRun?.selectedSlot ?? matched.slot.label;
+    const browserSlotAllowed =
+      browserRun?.selectedSlot &&
+      !task.input.unavailableWeekdays?.includes(slotWeekday(browserRun.selectedSlot));
+    const selectedProvider = browserSlotAllowed ? browserRun.providerName : matched.provider.name;
+    const selectedSlot = browserSlotAllowed ? browserRun.selectedSlot : matched.slot.label;
     const screenshot =
-      browserRun?.screenshot ??
+      (browserSlotAllowed ? browserRun?.screenshot : undefined) ??
       buildSvgArtifact(
         "Controlled Appointment Search",
         [

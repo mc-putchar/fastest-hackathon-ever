@@ -73,6 +73,32 @@ function addEvaluation(task: Task, name: string, score: number, summary: string)
     });
 }
 
+function buildTaskGoal(task: Task) {
+  const userMessages = task.messages.filter((message) => message.role === "user").map((message) => message.content.trim());
+  if (userMessages.length === 0) {
+    return task.goal;
+  }
+
+  const [initialGoal, ...updates] = userMessages;
+  if (updates.length === 0) {
+    return initialGoal;
+  }
+
+  return [initialGoal, ...updates.map((message) => `Update: ${message}`)].join("\n");
+}
+
+function resetTaskForRetry(task: Task) {
+  task.approvals = task.approvals.filter((approval) => approval.status !== "pending");
+  task.nextPrompt = undefined;
+  task.lastErrorCode = undefined;
+  task.runtime = {
+    ...task.runtime,
+    selectedSlot: undefined,
+    selectedProvider: undefined,
+    confirmationCode: undefined,
+  };
+}
+
 function applyPlannerDecision(task: Task, decision: PlannerDecision) {
   task.type = decision.taskType;
   task.riskLevel = decision.riskLevel;
@@ -290,6 +316,17 @@ async function progressTask(task: Task) {
         return persistTask(task);
       }
 
+      if (result.status === "completed") {
+        task.artifacts = [...(await executor.captureEvidence(task, "complete")), ...task.artifacts];
+        updateTaskState(task, "completed", "complete");
+        task.lastErrorCode = undefined;
+        task.nextPrompt = result.nextAction;
+        addMessage(task, "agent", result.nextAction);
+        addTimeline(task, "complete", "Task completed", result.nextAction, "success");
+        addTrace(task, "complete", "Execution completed", result.nextAction, "output");
+        return persistTask(task);
+      }
+
       if (result.approvalRequest) {
         task.approvals = task.approvals
           .filter((approval) => approval.status === "approved" || approval.status === "rejected")
@@ -318,9 +355,11 @@ export function getTaskOrThrow(taskId: string) {
 export async function appendTaskMessage(taskId: string, message: string) {
   const task = requireTask(taskId);
   addMessage(task, "user", message);
+  task.goal = buildTaskGoal(task);
+  resetTaskForRetry(task);
   await updateTaskWithPlanner(task, message, "clarify");
-  addTrace(task, "clarify", "User input merged", "The latest user message updated the structured task input.", "input");
-  addTimeline(task, "clarify", "User replied", "Merged the new information into the task input model.");
+  addTrace(task, "clarify", "Goal revised", "The latest follow-up updated the active goal and structured task input.", "input");
+  addTimeline(task, "clarify", "Goal updated", "Applied the follow-up to the active goal and restarted the search state.");
   return progressTask(task);
 }
 
