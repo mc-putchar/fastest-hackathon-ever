@@ -1,13 +1,25 @@
 import { cloneTask, type Task } from "@/app/lib/domain";
 
-const tasks = new Map<string, Task>();
+declare global {
+  var __dreamAgentTasks: Map<string, Task> | undefined;
+}
+
+function getTaskMap() {
+  if (!globalThis.__dreamAgentTasks) {
+    globalThis.__dreamAgentTasks = new Map<string, Task>();
+  }
+
+  return globalThis.__dreamAgentTasks;
+}
 
 export function saveTask(task: Task) {
+  const tasks = getTaskMap();
   tasks.set(task.id, cloneTask(task));
   return cloneTask(task);
 }
 
 export function getTask(taskId: string) {
+  const tasks = getTaskMap();
   const task = tasks.get(taskId);
   return task ? cloneTask(task) : null;
 }

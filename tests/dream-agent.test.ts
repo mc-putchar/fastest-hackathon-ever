@@ -6,6 +6,7 @@ import {
   createTaskFromMessage,
   rejectTask,
 } from "@/app/lib/dream-agent";
+import { saveTask } from "@/app/lib/task-store";
 import { syncTaskTelemetry } from "@/app/lib/langfuse";
 
 test("uses the OpenAI planner when configured and keeps browser execution separate", async () => {
@@ -59,6 +60,18 @@ test("uses the OpenAI planner when configured and keeps browser execution separa
 
     (globalThis as { __dreamAgentOpenAIPlanner?: unknown }).__dreamAgentOpenAIPlanner = originalPlanner;
   }
+});
+
+test("task store survives separate module instances for follow-up routes", async () => {
+  const task = await createTaskFromMessage("I need a Burgeramt appointment in Berlin.");
+  saveTask(task);
+
+  const cacheBuster = Date.now().toString(36);
+  const imported = (await import(`../app/lib/task-store.ts?${cacheBuster}`)) as {
+    getTask: (taskId: string) => typeof task | null;
+  };
+
+  assert.equal(imported.getTask(task.id)?.id, task.id);
 });
 
 test("asks for missing fields before automation", async () => {
