@@ -6,6 +6,7 @@ Calm operator for high-friction digital errands, currently focused on doctor and
 
 ```bash
 npm install
+npx playwright install
 npm run dev
 ```
 
